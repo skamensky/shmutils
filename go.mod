@@ -3,11 +3,7 @@ module github.com/skamensky/shmutils
 go 1.18
 
 // when developing uncomment this out
-replace github.com/skamensky/shmutils => /home/shmuel/repos/shmutils
-
-replace github.com/skamensky/shmutils/internal/calc => /home/shmuel/repos/shmutils/internal/calc
-
-replace github.com/skamensky/shmutils/internal/docker => /home/shmuel/repos/shmutils/internal/docker
+//replace github.com/skamensky/shmutils => /home/shmuel/repos/shmutils
 
 require (
 	github.com/PaesslerAG/gval v1.2.1
