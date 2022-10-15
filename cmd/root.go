@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/skamensky/shmutils/internal/calc"
 	"github.com/skamensky/shmutils/internal/docker"
@@ -61,6 +63,68 @@ func init() {
 			}
 		},
 	}
+	randPass := &cobra.Command{
+		Use: `randpass`,
+
+		Short: "Random password generator",
+		Run: func(cmd *cobra.Command, args []string) {
+			shouldSpecial, err := cmd.Flags().GetBool("special")
+			if err != nil {
+				fmt.Println("Error getting special flag")
+				return
+			}
+			shouldNumbers, err := cmd.Flags().GetBool("numbers")
+			if err != nil {
+				fmt.Println("Error getting numbers flag")
+				return
+			}
+			length, err := cmd.Flags().GetInt("length")
+			if err != nil {
+				fmt.Println("Error getting length flag")
+				return
+			}
+			shouldLetters, err := cmd.Flags().GetBool("letters")
+			if err != nil {
+				fmt.Println("Error getting letters flag")
+				return
+			}
+			specialChacterSet := "!@#$%^&*()_+"
+			numberCharacterSet := "1234567890"
+			letterCharacterSet := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+			characterSets := []string{}
+
+			if shouldSpecial {
+				characterSets = append(characterSets, specialChacterSet)
+			}
+			if shouldNumbers {
+				characterSets = append(characterSets, numberCharacterSet)
+			}
+			if shouldLetters {
+				characterSets = append(characterSets, letterCharacterSet)
+			}
+
+			if len(characterSets) == 0 {
+				fmt.Println("You must select at least one character type")
+				return
+			}
+
+			rand.Seed(time.Now().UnixNano())
+			result := ""
+			for i := 0; i < length; i++ {
+				chosenSet := rand.Intn(len(characterSets))
+				chosenChar := rand.Intn(len(characterSets[chosenSet]))
+				result += string(characterSets[chosenSet][chosenChar])
+			}
+			fmt.Println(result)
+		},
+	}
+	randPass.Flags().Int("length", 16, "Length of password")
+	randPass.Flags().Bool("special", false, "Include special characters")
+	randPass.Flags().Bool("numbers", true, "Include numbers")
+	randPass.Flags().Bool("letters", true, "Include letters")
+
 	rootCmd.AddCommand(dockerCmd)
 	rootCmd.AddCommand(calcCmd)
+	rootCmd.AddCommand(randPass)
 }
