@@ -9,6 +9,7 @@ import (
 
 	"github.com/skamensky/shmutils/internal/calc"
 	"github.com/skamensky/shmutils/internal/docker"
+	"github.com/skamensky/shmutils/internal/tz"
 	"github.com/spf13/cobra"
 )
 
@@ -124,7 +125,22 @@ func init() {
 	randPass.Flags().Bool("numbers", true, "Include numbers")
 	randPass.Flags().Bool("letters", true, "Include letters")
 
+	tzCmd := &cobra.Command{
+		Use:   `tz "[query]"`,
+		Short: "Converts times between timezones",
+		Run: func(cmd *cobra.Command, args []string) {
+			query := strings.Join(args, " ")
+			res, err := tz.ExecuteQuery(query)
+			if err != nil {
+				fmt.Printf("Error executing query: %s\n", err)
+			} else {
+				fmt.Println(res)
+			}
+		},
+	}
+
 	rootCmd.AddCommand(dockerCmd)
 	rootCmd.AddCommand(calcCmd)
 	rootCmd.AddCommand(randPass)
+	rootCmd.AddCommand(tzCmd)
 }
