@@ -154,7 +154,7 @@ func init() {
 				fmt.Println("Error getting dir flag")
 				return
 			}
-			fmt.Printf("Starting fileserver on port %d serving directory %s\n", port, dir)
+			fmt.Printf("Starting fileserver on 127.0.0.1:%d serving directory %s\n", port, dir)
 			err = http.ListenAndServe(fmt.Sprintf(":%d", port), http.FileServer(http.Dir(dir)))
 			if err != nil {
 				fmt.Println("Failed to start server", err)
