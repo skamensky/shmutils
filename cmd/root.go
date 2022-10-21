@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"math/rand"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -139,8 +140,34 @@ func init() {
 		},
 	}
 
+	webServer := &cobra.Command{
+		Use:   `server`,
+		Short: "Starts an http file system server",
+		Run: func(cmd *cobra.Command, args []string) {
+			port, err := cmd.Flags().GetInt("port")
+			if err != nil {
+				fmt.Println("Error getting port flag")
+				return
+			}
+			dir, err := cmd.Flags().GetString("dir")
+			if err != nil {
+				fmt.Println("Error getting dir flag")
+				return
+			}
+			fmt.Printf("Starting fileserver on port %d serving directory %s\n", port, dir)
+			err = http.ListenAndServe(fmt.Sprintf(":%d", port), http.FileServer(http.Dir(dir)))
+			if err != nil {
+				fmt.Println("Failed to start server", err)
+				return
+			}
+		},
+	}
+	webServer.Flags().Int("port", 8080, "Port to listen on")
+	webServer.Flags().String("dir", ".", "Directory to serve")
+
 	rootCmd.AddCommand(dockerCmd)
 	rootCmd.AddCommand(calcCmd)
 	rootCmd.AddCommand(randPass)
 	rootCmd.AddCommand(tzCmd)
+	rootCmd.AddCommand(webServer)
 }
