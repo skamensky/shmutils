@@ -85,27 +85,45 @@ func init() {
 				fmt.Println("Error getting length flag")
 				return
 			}
-			shouldLetters, err := cmd.Flags().GetBool("letters")
+			shouldUpper, err := cmd.Flags().GetBool("upper")
 			if err != nil {
-				fmt.Println("Error getting letters flag")
+				fmt.Println("Error getting uppercase flag")
 				return
 			}
-			specialChacterSet := "!@#$%^&*()_+"
-			numberCharacterSet := "1234567890"
-			letterCharacterSet := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+			shouldLower, err := cmd.Flags().GetBool("lower")
+			if err != nil {
+				fmt.Println("Error getting lowercase flag")
+				return
+			}
 
+			shouldConfusing, err := cmd.Flags().GetBool("confusing")
+			if err != nil {
+				fmt.Println("Error getting letters confusing")
+				return
+			}
+			specialCharSet := "!@#$%^&*()_+"
+			// missing some characters on purpose which are found in the "confusing" set
+			numberCharSet := "23456789"
+			upperCharSet := "ABCDEFGHJKLMNPQRSTUVWXYZ"
+			lowerCharSet := "abcdefghijkmnpqrstuvwxyz"
+			confusingSet := "0Oo1Il"
 			characterSets := []string{}
 
 			if shouldSpecial {
-				characterSets = append(characterSets, specialChacterSet)
+				characterSets = append(characterSets, specialCharSet)
 			}
 			if shouldNumbers {
-				characterSets = append(characterSets, numberCharacterSet)
+				characterSets = append(characterSets, numberCharSet)
 			}
-			if shouldLetters {
-				characterSets = append(characterSets, letterCharacterSet)
+			if shouldUpper {
+				characterSets = append(characterSets, upperCharSet)
 			}
-
+			if shouldLower {
+				characterSets = append(characterSets, lowerCharSet)
+			}
+			if shouldConfusing {
+				characterSets = append(characterSets, confusingSet)
+			}
 			if len(characterSets) == 0 {
 				fmt.Println("You must select at least one character type")
 				return
@@ -124,7 +142,9 @@ func init() {
 	randPass.Flags().Int("length", 16, "Length of password")
 	randPass.Flags().Bool("special", false, "Include special characters")
 	randPass.Flags().Bool("numbers", true, "Include numbers")
-	randPass.Flags().Bool("letters", true, "Include letters")
+	randPass.Flags().Bool("upper", true, "Include uppercase letters")
+	randPass.Flags().Bool("lower", false, "Include lowercase letters")
+	randPass.Flags().Bool("confusing", false, "Include visually confusing characters like lowercase L and uppercase I")
 
 	tzCmd := &cobra.Command{
 		Use:   `tz "[query]"`,
