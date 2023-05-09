@@ -45,8 +45,8 @@ func NewCommand(executable string, args ...string) *Command {
 	return c
 }
 
-func (c *Command) WithVerbose() *Command {
-	c.verbose = true
+func (c *Command) WithVerbose(verbose bool) *Command {
+	c.verbose = verbose
 	return c
 }
 
