@@ -2,25 +2,26 @@ package docker
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/manifoldco/promptui"
 	"github.com/skamensky/shmutils/pkg/command"
-	"strings"
 )
 
 func GetDockerContainers() (string, error) {
-	res := command.NewCommand("docker", "container", "ls").WithTreatStderrAsErr().Run()
-	return string(res.Stdout.Bytes()), res.Err
+	res := command.New("docker", "container", "ls").WithTreatStderrAsErr(true).Run()
+	return res.Stdout.String(), res.Err
 }
 
 func AttachToDockerContainer(containerId string) error {
 	getCommand := func(shell string) string {
 		return fmt.Sprintf("docker exec -it %s %s", containerId, shell)
 	}
-	cmd := command.NewCommand("bash", "-c", getCommand("bash")).WithTreatStderrAsErr().WithAttachToTerminal()
+	cmd := command.New("bash", "-c", getCommand("bash")).WithTreatStderrAsErr(true).WithAttachToTerminal(true)
 	res := cmd.Run()
 	if res.Err != nil {
 		fmt.Println("Couldn't run bash, trying sh")
-		cmd = command.NewCommand("bash", "-c", getCommand("sh")).WithTreatStderrAsErr().WithAttachToTerminal()
+		cmd = command.New("bash", "-c", getCommand("sh")).WithTreatStderrAsErr(true).WithAttachToTerminal(true)
 		res = cmd.Run()
 		if res.Err != nil {
 			return res.Err

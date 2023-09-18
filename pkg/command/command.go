@@ -116,11 +116,9 @@ func (c *Command) Kill(timeout int) error {
 	return <-c.killRequest
 }
 
-func NewCommand(executable string, args ...string) *Command {
+func New(executable string, args ...string) *Command {
 	argsAsArray := make([]string, len(args))
-	for i, arg := range args {
-		argsAsArray[i] = arg
-	}
+	copy(argsAsArray, args)
 	c := &Command{
 		executable:       executable,
 		args:             argsAsArray,
@@ -141,8 +139,8 @@ func (c *Command) WithVerbose(verbose bool) *Command {
 	return c
 }
 
-func (c *Command) WithTreatStderrAsErr() *Command {
-	c.treatStderrAsErr = true
+func (c *Command) WithTreatStderrAsErr(treatStderAsErr bool) *Command {
+	c.treatStderrAsErr = treatStderAsErr
 	return c
 }
 
@@ -151,8 +149,8 @@ func (c *Command) WithDir(dir string) *Command {
 	return c
 }
 
-func (c *Command) WithAttachToTerminal() *Command {
-	c.attachToTerminal = true
+func (c *Command) WithAttachToTerminal(attach bool) *Command {
+	c.attachToTerminal = attach
 	return c
 }
 
