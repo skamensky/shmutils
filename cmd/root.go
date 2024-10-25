@@ -10,6 +10,7 @@ import (
 
 	"github.com/skamensky/shmutils/internal/calc"
 	"github.com/skamensky/shmutils/internal/docker"
+	"github.com/skamensky/shmutils/internal/promptify"
 	"github.com/skamensky/shmutils/internal/tz"
 	"github.com/spf13/cobra"
 )
@@ -185,6 +186,56 @@ func init() {
 	webServer.Flags().Int("port", 8080, "Port to listen on")
 	webServer.Flags().String("dir", ".", "Directory to serve")
 
+	promptifyCmd := &cobra.Command{
+		Use:   "promptify [directory]",
+		Short: "Generates a directory tree prompt with file contents, respecting .gitignore",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			maxDepth, err := cmd.Flags().GetInt("maxdepth")
+			if err != nil {
+				fmt.Println("Error getting maxdepth flag:", err)
+				return
+			}
+
+			fileFormat, err := cmd.Flags().GetString("format")
+			if err != nil {
+				fmt.Println("Error getting format flag:", err)
+				return
+			}
+
+			promptIntro, err := cmd.Flags().GetString("intro")
+
+			if err != nil {
+				fmt.Println("Error getting intro flag:", err)
+				return
+			}
+
+			rootDir := args[0]
+
+			opts := promptify.Options{
+				MaxDepth:    maxDepth,
+				RootDir:     rootDir,
+				FileFormat:  fileFormat,
+				PromptIntro: promptIntro,
+			}
+
+			result, err := promptify.Promptify(opts)
+			if err != nil {
+				fmt.Printf("Error generating prompt: %s\n", err)
+				return
+			}
+
+			fmt.Print(result)
+		},
+	}
+
+	promptifyCmd.Flags().Int("maxdepth", 1, "Maximum depth to traverse (default 1)")
+	promptifyCmd.Flags().String("format", "<FILE name=\"{{.FileName}}\">\n{{.Content}}\n</FILE>",
+		"Format template for file contents")
+	promptifyCmd.Flags().String("intro", "The contents below represent a directory '{{.Root}}' and its file contents. Files are delimited by ```{{.FileFormat}}```\n", "Introduction template")
+
+	rootCmd.AddCommand(promptifyCmd)
+	rootCmd.AddCommand(promptifyCmd)
 	rootCmd.AddCommand(dockerCmd)
 	rootCmd.AddCommand(calcCmd)
 	rootCmd.AddCommand(randPass)
