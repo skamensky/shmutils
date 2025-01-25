@@ -34,6 +34,10 @@ type Options struct {
 	// in addition to the normal .gitignore (and the implicit .git folder).
 	// Patterns can be e.g. "*.md" or "node_modules".
 	IgnorePatterns []string
+
+	// DryRun, if true, indicates that we only want to list the files
+	// that would be included (skipping content retrieval and templating).
+	DryRun bool
 }
 
 // PromptifyData is the data used by the top-level PromptIntro template.
@@ -50,7 +54,10 @@ type FileData struct {
 
 // Promptify generates a single string containing an introduction (via PromptIntro)
 // and the contents of each file (via FileFormat), respecting .gitignore, max depth,
-// and additional ignore patterns. It also always ignores the .git folder.
+// and additional ignore patterns. It also always ignores the .git folder by default.
+//
+// If opts.DryRun == true, then it simply returns a list of included file names
+// (one per line) without reading file contents or rendering templates.
 func Promptify(opts Options) (string, error) {
 	if opts.RootDir == "" {
 		return "", errors.New("root directory must be specified")
@@ -63,27 +70,39 @@ func Promptify(opts Options) (string, error) {
 		ign, _ = gitignore.CompileIgnoreFile(gitIgnorePath)
 	}
 
-	// 2. Parse the templates up front (fail early if invalid).
-	introTmpl, err := template.New("intro").Parse(opts.PromptIntro)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse PromptIntro template: %w", err)
-	}
-
-	fileTmpl, err := template.New("fileFormat").Parse(opts.FileFormat)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse FileFormat template: %w", err)
-	}
-
-	// 3. Collect all files up to max depth (if > 0), respecting .gitignore and user ignore patterns.
+	// 2. Collect all files up to max depth (if > 0), respecting .gitignore and user ignore patterns.
 	fileInfos, err := collectFiles(opts.RootDir, ign, opts.IgnorePatterns, opts.MaxDepth)
 	if err != nil {
 		return "", err
 	}
 
-	// 4. Build the result in a string buffer.
+	// 3. If we're just doing a dry run, return the filenames only.
+	if opts.DryRun {
+		var buf bytes.Buffer
+		for _, path := range fileInfos {
+			buf.WriteString(path + "\n")
+		}
+		return buf.String(), nil
+	}
+
+	// 4. Otherwise, parse templates and render the actual prompt.
+
+	// 4a. Parse the introduction template.
+	introTmpl, err := template.New("intro").Parse(opts.PromptIntro)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse PromptIntro template: %w", err)
+	}
+
+	// 4b. Parse the file format template.
+	fileTmpl, err := template.New("fileFormat").Parse(opts.FileFormat)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse FileFormat template: %w", err)
+	}
+
+	// 5. Build the result in a string buffer.
 	var buf bytes.Buffer
 
-	// 4a. Render the intro template first.
+	// 5a. Render the intro template first.
 	introData := PromptifyData{
 		Root:       opts.RootDir,
 		FileFormat: opts.FileFormat,
@@ -96,11 +115,10 @@ func Promptify(opts Options) (string, error) {
 	}
 	buf.WriteString("\n")
 
-	// 4b. For each file, read contents & apply file template.
+	// 5b. For each file, read contents & apply file template.
 	for _, path := range fileInfos {
 		content, err := os.ReadFile(path)
 		if err != nil {
-			// You can choose to skip or return error if reading fails
 			return "", fmt.Errorf("failed to read file %q: %w", path, err)
 		}
 
@@ -122,7 +140,7 @@ func Promptify(opts Options) (string, error) {
 }
 
 // collectFiles walks through the directory up to maxDepth (if > 0),
-// collecting files that are *not* ignored by the .gitignore parser (if provided)
+// collecting files that are *not* ignored by the .gitignore parser (if provided),
 // and are not matched by any custom ignore patterns. Also implicitly ignores the .git folder.
 func collectFiles(root string, ign *gitignore.GitIgnore, userIgnores []string, maxDepth int) ([]string, error) {
 	var result []string
@@ -170,7 +188,6 @@ func collectFiles(root string, ign *gitignore.GitIgnore, userIgnores []string, m
 			matched, matchErr := filepath.Match(pattern, info.Name())
 			if matchErr != nil {
 				// If the pattern is invalid, skip or handle as needed
-				// We'll just ignore the pattern in that case
 				continue
 			}
 			if matched {
@@ -195,6 +212,5 @@ func collectFiles(root string, ign *gitignore.GitIgnore, userIgnores []string, m
 	if err != nil && err != io.EOF {
 		return nil, err
 	}
-
 	return result, nil
 }

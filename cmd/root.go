@@ -214,6 +214,12 @@ func init() {
 				return
 			}
 	
+			dryRun, err := cmd.Flags().GetBool("dry-run")
+			if err != nil {
+				fmt.Println("Error getting dry-run flag:", err)
+				return
+			}
+	
 			rootDir := args[0]
 	
 			opts := promptify.Options{
@@ -222,6 +228,7 @@ func init() {
 				FileFormat:     fileFormat,
 				PromptIntro:    promptIntro,
 				IgnorePatterns: ignorePatterns,
+				DryRun:         dryRun,
 			}
 	
 			result, err := promptify.Promptify(opts)
@@ -247,10 +254,11 @@ func init() {
 			"Output files using your normal markdown format.",
 		"Introduction template",
 	)
-
 	// Support multiple --ignore flags, e.g.:
 	//    --ignore="*.md" --ignore="node_modules"
 	promptifyCmd.Flags().StringSlice("ignore", []string{}, "List of file/directory name patterns to ignore")
+
+	promptifyCmd.Flags().Bool("dry-run", false, "If set, only prints the list of included file names (no content)")
 
 	rootCmd.AddCommand(promptifyCmd)
 	rootCmd.AddCommand(dockerCmd)
