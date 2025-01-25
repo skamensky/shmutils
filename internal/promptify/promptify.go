@@ -1,203 +1,200 @@
-// File: internal/promptify/promptify.go
-
 package promptify
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"text/template"
 
-	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
+	gitignore "github.com/sabhiram/go-gitignore"
 )
 
+// Options defines the configurable parameters for generating the prompt.
 type Options struct {
-	MaxDepth    int
-	RootDir     string
-	FileFormat  string
+	// MaxDepth is the maximum depth of directory traversal.
+	// If <= 0, there is no limit.
+	MaxDepth int
+
+	// RootDir is the directory from which to begin collecting file information.
+	RootDir string
+
+	// FileFormat is the format/template for each file's content, e.g.:
+	//   "<FILE name=\"{{.FileName}}\">\n{{.Content}}\n</FILE>"
+	FileFormat string
+
+	// PromptIntro is the template that is prepended before listing all file formats, e.g.:
+	//   "The contents below represent a directory '{{.Root}}' and its file contents..."
 	PromptIntro string
+
+	// IgnorePatterns is a list of file/directory name patterns that should be ignored
+	// in addition to the normal .gitignore (and the implicit .git folder).
+	// Patterns can be e.g. "*.md" or "node_modules".
+	IgnorePatterns []string
 }
 
-type FileNode struct {
-	Name     string
-	Path     string
-	Content  string
-	IsDir    bool
-	Children []*FileNode
-}
-
-type FormatData struct {
-	FileName string
-	Content  string
-}
-
-type IntroData struct {
+// PromptifyData is the data used by the top-level PromptIntro template.
+type PromptifyData struct {
 	Root       string
 	FileFormat string
 }
 
-// loadGitignore loads the .gitignore from the root directory and returns a matcher
-func loadGitignore(rootDir string) (gitignore.Matcher, error) {
-	patterns := []gitignore.Pattern{}
-
-	gitignorePath := filepath.Join(rootDir, ".gitignore")
-	if _, err := os.Stat(gitignorePath); err == nil {
-		content, err := os.ReadFile(gitignorePath)
-		if err != nil {
-			return nil, fmt.Errorf("error reading .gitignore: %w", err)
-		}
-
-		for _, line := range strings.Split(string(content), "\n") {
-			line = strings.TrimSpace(line)
-			if line != "" && !strings.HasPrefix(line, "#") {
-				patterns = append(patterns, gitignore.ParsePattern(line, nil))
-			}
-		}
-	}
-
-	return gitignore.NewMatcher(patterns), nil
+// FileData is the data passed into the FileFormat template for each file.
+type FileData struct {
+	FileName string
+	Content  string
 }
 
+// Promptify generates a single string containing an introduction (via PromptIntro)
+// and the contents of each file (via FileFormat), respecting .gitignore, max depth,
+// and additional ignore patterns. It also always ignores the .git folder.
 func Promptify(opts Options) (string, error) {
-	if opts.MaxDepth < 1 {
-		return "", fmt.Errorf("maxdepth must be at least 1")
+	if opts.RootDir == "" {
+		return "", errors.New("root directory must be specified")
 	}
 
-	// Load .gitignore once at the root
-	matcher, err := loadGitignore(opts.RootDir)
+	// 1. Prepare the .gitignore matcher (ignore errors if .gitignore not found).
+	var ign *gitignore.GitIgnore
+	gitIgnorePath := filepath.Join(opts.RootDir, ".gitignore")
+	if fi, err := os.Stat(gitIgnorePath); err == nil && !fi.IsDir() {
+		ign, _ = gitignore.CompileIgnoreFile(gitIgnorePath)
+	}
+
+	// 2. Parse the templates up front (fail early if invalid).
+	introTmpl, err := template.New("intro").Parse(opts.PromptIntro)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse PromptIntro template: %w", err)
+	}
+
+	fileTmpl, err := template.New("fileFormat").Parse(opts.FileFormat)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse FileFormat template: %w", err)
+	}
+
+	// 3. Collect all files up to max depth (if > 0), respecting .gitignore and user ignore patterns.
+	fileInfos, err := collectFiles(opts.RootDir, ign, opts.IgnorePatterns, opts.MaxDepth)
 	if err != nil {
 		return "", err
 	}
 
-	// Build the file tree
-	tree := &FileNode{
-		Name:     filepath.Base(opts.RootDir),
-		Path:     opts.RootDir,
-		IsDir:    true,
-		Children: make([]*FileNode, 0),
+	// 4. Build the result in a string buffer.
+	var buf bytes.Buffer
+
+	// 4a. Render the intro template first.
+	introData := PromptifyData{
+		Root:       opts.RootDir,
+		FileFormat: opts.FileFormat,
 	}
-
-	err = buildTree(tree, opts.MaxDepth, 1, matcher, opts.RootDir)
-	if err != nil {
-		return "", fmt.Errorf("error building file tree: %w", err)
+	if err := introTmpl.Execute(&buf, introData); err != nil {
+		return "", fmt.Errorf("failed to execute PromptIntro template: %w", err)
 	}
+	if !strings.HasSuffix(buf.String(), "\n") {
+		buf.WriteString("\n")
+	}
+	buf.WriteString("\n")
 
-	// Generate the prompt
-	var sb strings.Builder
-
-	// Add prompt introduction if provided
-	if opts.PromptIntro != "" {
-		introTmpl, err := template.New("intro").Parse(opts.PromptIntro)
+	// 4b. For each file, read contents & apply file template.
+	for _, path := range fileInfos {
+		content, err := os.ReadFile(path)
 		if err != nil {
-			return "", fmt.Errorf("error parsing intro template: %w", err)
+			// You can choose to skip or return error if reading fails
+			return "", fmt.Errorf("failed to read file %q: %w", path, err)
 		}
 
-		introData := IntroData{
-			Root:       opts.RootDir,
-			FileFormat: opts.FileFormat,
+		fileData := FileData{
+			FileName: path,
+			Content:  string(content),
 		}
 
-		var introBuf bytes.Buffer
-		if err := introTmpl.Execute(&introBuf, introData); err != nil {
-			return "", fmt.Errorf("error executing intro template: %w", err)
+		if err := fileTmpl.Execute(&buf, fileData); err != nil {
+			return "", fmt.Errorf("failed to execute FileFormat template for file %q: %w", path, err)
 		}
-		sb.WriteString(introBuf.String())
-		sb.WriteString("\n\n")
+		if !strings.HasSuffix(buf.String(), "\n") {
+			buf.WriteString("\n")
+		}
+		buf.WriteString("\n")
 	}
 
-	// Parse file format template
-	formatTmpl, err := template.New("format").Parse(opts.FileFormat)
-	if err != nil {
-		return "", fmt.Errorf("error parsing file format template: %w", err)
-	}
-
-	err = generatePrompt(tree, formatTmpl, &sb)
-	if err != nil {
-		return "", fmt.Errorf("error generating prompt: %w", err)
-	}
-
-	return sb.String(), nil
+	return buf.String(), nil
 }
 
-func buildTree(node *FileNode, maxDepth, currentDepth int, matcher gitignore.Matcher, rootDir string) error {
-	if currentDepth > maxDepth {
+// collectFiles walks through the directory up to maxDepth (if > 0),
+// collecting files that are *not* ignored by the .gitignore parser (if provided)
+// and are not matched by any custom ignore patterns. Also implicitly ignores the .git folder.
+func collectFiles(root string, ign *gitignore.GitIgnore, userIgnores []string, maxDepth int) ([]string, error) {
+	var result []string
+
+	err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+
+		// We don't want to process the root as a file
+		if path == root {
+			return nil
+		}
+
+		// If this is the .git folder, skip it (and everything inside).
+		if info.IsDir() && info.Name() == ".git" {
+			return filepath.SkipDir
+		}
+
+		// Compute depth by counting separators in the relative path
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		depth := len(strings.Split(rel, string(filepath.Separator)))
+
+		// If maxDepth > 0, skip deeper dirs/files
+		if maxDepth > 0 && depth > maxDepth {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// 1) .gitignore check
+		if ign != nil && ign.MatchesPath(rel) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// 2) user-specified ignore patterns
+		for _, pattern := range userIgnores {
+			matched, matchErr := filepath.Match(pattern, info.Name())
+			if matchErr != nil {
+				// If the pattern is invalid, skip or handle as needed
+				// We'll just ignore the pattern in that case
+				continue
+			}
+			if matched {
+				// If the name matches the pattern, skip this file/dir
+				if info.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+		}
+
+		// If we're a directory, keep walking
+		if info.IsDir() {
+			return nil
+		}
+
+		// If we're a file, add it
+		result = append(result, path)
 		return nil
+	})
+
+	if err != nil && err != io.EOF {
+		return nil, err
 	}
 
-	entries, err := os.ReadDir(node.Path)
-	if err != nil {
-		return err
-	}
-
-	for _, entry := range entries {
-		if entry.Name() == ".git" {
-			continue
-		}
-
-		path := filepath.Join(node.Path, entry.Name())
-
-		// Get path relative to root directory for gitignore matching
-		relPath, err := filepath.Rel(rootDir, path)
-		if err != nil {
-			continue
-		}
-
-		// Convert to forward slashes for consistent matching
-		relPath = filepath.ToSlash(relPath)
-
-		// Check if file/directory should be ignored
-		if matcher.Match(strings.Split(relPath, "/"), entry.IsDir()) {
-			continue
-		}
-
-		fileNode := &FileNode{
-			Name:     entry.Name(),
-			Path:     path,
-			IsDir:    entry.IsDir(),
-			Children: make([]*FileNode, 0),
-		}
-
-		if !entry.IsDir() {
-			content, err := os.ReadFile(path)
-			if err != nil {
-				continue
-			}
-			fileNode.Content = string(content)
-		} else {
-			err := buildTree(fileNode, maxDepth, currentDepth+1, matcher, rootDir)
-			if err != nil {
-				continue
-			}
-		}
-
-		node.Children = append(node.Children, fileNode)
-	}
-
-	return nil
-}
-
-func generatePrompt(node *FileNode, formatTmpl *template.Template, sb *strings.Builder) error {
-	if !node.IsDir {
-		data := FormatData{
-			FileName: node.Path,
-			Content:  node.Content,
-		}
-
-		var buf bytes.Buffer
-		if err := formatTmpl.Execute(&buf, data); err != nil {
-			return err
-		}
-		sb.WriteString(buf.String())
-		sb.WriteString("\n")
-	}
-
-	for _, child := range node.Children {
-		if err := generatePrompt(child, formatTmpl, sb); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return result, nil
 }

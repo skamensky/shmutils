@@ -185,7 +185,6 @@ func init() {
 	}
 	webServer.Flags().Int("port", 8080, "Port to listen on")
 	webServer.Flags().String("dir", ".", "Directory to serve")
-
 	promptifyCmd := &cobra.Command{
 		Use:   "promptify [directory]",
 		Short: "Generates a directory tree prompt with file contents, respecting .gitignore",
@@ -196,45 +195,63 @@ func init() {
 				fmt.Println("Error getting maxdepth flag:", err)
 				return
 			}
-
+	
 			fileFormat, err := cmd.Flags().GetString("format")
 			if err != nil {
 				fmt.Println("Error getting format flag:", err)
 				return
 			}
-
+	
 			promptIntro, err := cmd.Flags().GetString("intro")
-
 			if err != nil {
 				fmt.Println("Error getting intro flag:", err)
 				return
 			}
-
-			rootDir := args[0]
-
-			opts := promptify.Options{
-				MaxDepth:    maxDepth,
-				RootDir:     rootDir,
-				FileFormat:  fileFormat,
-				PromptIntro: promptIntro,
+	
+			ignorePatterns, err := cmd.Flags().GetStringSlice("ignore")
+			if err != nil {
+				fmt.Println("Error getting ignore flag:", err)
+				return
 			}
-
+	
+			rootDir := args[0]
+	
+			opts := promptify.Options{
+				MaxDepth:       maxDepth,
+				RootDir:        rootDir,
+				FileFormat:     fileFormat,
+				PromptIntro:    promptIntro,
+				IgnorePatterns: ignorePatterns,
+			}
+	
 			result, err := promptify.Promptify(opts)
 			if err != nil {
 				fmt.Printf("Error generating prompt: %s\n", err)
 				return
 			}
-
+	
 			fmt.Print(result)
 		},
 	}
+	
+	promptifyCmd.Flags().Int("maxdepth", 0, "Max depth to traverse (0 means unlimited)")
+	promptifyCmd.Flags().String(
+		"format",
+		"<FILE name=\"{{.FileName}}\">\n{{.Content}}\n</FILE>",
+		"Format template for file contents",
+	)
+	promptifyCmd.Flags().String(
+		"intro",
+		"The contents below represent a directory '{{.Root}}' and its file contents. "+
+			"Files are delimited by ```{{.FileFormat}}```. This is just for input, do not output files using this format. "+
+			"Output files using your normal markdown format.",
+		"Introduction template",
+	)
 
-	promptifyCmd.Flags().Int("maxdepth", 1, "Maximum depth to traverse (default 1)")
-	promptifyCmd.Flags().String("format", "<FILE name=\"{{.FileName}}\">\n{{.Content}}\n</FILE>",
-		"Format template for file contents")
-	promptifyCmd.Flags().String("intro", "The contents below represent a directory '{{.Root}}' and its file contents. Files are delimited by ```{{.FileFormat}}```\n", "Introduction template")
+	// Support multiple --ignore flags, e.g.:
+	//    --ignore="*.md" --ignore="node_modules"
+	promptifyCmd.Flags().StringSlice("ignore", []string{}, "List of file/directory name patterns to ignore")
 
-	rootCmd.AddCommand(promptifyCmd)
 	rootCmd.AddCommand(promptifyCmd)
 	rootCmd.AddCommand(dockerCmd)
 	rootCmd.AddCommand(calcCmd)
